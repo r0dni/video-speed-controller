@@ -1,6 +1,13 @@
 document.addEventListener('DOMContentLoaded', () => {
   const speedButtons = document.querySelectorAll('.speed-btn');
   const speedBadge = document.getElementById('speed-badge');
+  const extVersion = document.getElementById('ext-version');
+
+  // Display extension version
+  if (extVersion && chrome.runtime?.getManifest) {
+    const manifest = chrome.runtime.getManifest();
+    extVersion.textContent = `v${manifest.version}`;
+  }
 
   function updateUI(activeSpeed) {
     const formattedSpeed = Number(activeSpeed).toFixed(1) + 'x';
