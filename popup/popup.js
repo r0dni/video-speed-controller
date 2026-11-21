@@ -6,6 +6,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const stepUpBtn = document.getElementById('step-up');
   const resetSpeedBtn = document.getElementById('reset-speed');
 
+  const toggleSettingsBtn = document.getElementById('toggle-settings');
+  const settingsPanel = document.getElementById('settings-panel');
+  const resetHotkeysBtn = document.getElementById('reset-hotkeys');
+  const hotkeyButtons = document.querySelectorAll('.hotkey-btn');
+
+  const DEFAULT_HOTKEYS = {
+    speedUp: { code: 'ArrowUp', altKey: true, ctrlKey: false, shiftKey: false, label: 'Alt + ↑' },
+    speedDown: { code: 'ArrowDown', altKey: true, ctrlKey: false, shiftKey: false, label: 'Alt + ↓' },
+    reset: { code: 'KeyR', altKey: true, ctrlKey: false, shiftKey: false, label: 'Alt + R' }
+  };
+
   // Display extension version
   if (extVersion && chrome.runtime?.getManifest) {
     const manifest = chrome.runtime.getManifest();
@@ -27,6 +38,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function updateHotkeysUI(hotkeys) {
+    hotkeyButtons.forEach(btn => {
+      const action = btn.getAttribute('data-action');
+      if (hotkeys[action] && hotkeys[action].label) {
+        btn.textContent = hotkeys[action].label;
+      }
+    });
+  }
+
   function applySpeed(newSpeed) {
     const rounded = Math.round(newSpeed * 10) / 10;
     const clamped = Math.max(0.2, Math.min(4.0, rounded));
@@ -40,7 +60,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabs[0]?.id) {
           chrome.tabs.sendMessage(tabs[0].id, { action: 'SET_SPEED', speed: clamped }, (response) => {
             if (chrome.runtime.lastError) {
-              console.debug('Could not send message to tab:', chrome.runtime.lastError.message);
+              console.debug('Could not send message to tab, using scripting fallback:', chrome.runtime.lastError.message);
+              chrome.scripting.executeScript({
+                target: { tabId: tabs[0].id, allFrames: true },
+                func: (s) => document.querySelectorAll('video').forEach(v => v.playbackRate = s),
+                args: [clamped]
+              }).catch(err => console.debug('Scripting fallback error:', err));
             }
           });
         }
@@ -48,13 +73,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Load initial speed from storage
-  chrome.storage.local.get(['playbackSpeed'], (result) => {
+  // Load initial speed and hotkeys from storage
+  chrome.storage.local.get(['playbackSpeed', 'hotkeys'], (result) => {
     const currentSpeed = result.playbackSpeed !== undefined ? result.playbackSpeed : 1;
     updateUI(currentSpeed);
+
+    const hotkeys = result.hotkeys || DEFAULT_HOTKEYS;
+    updateHotkeysUI(hotkeys);
   });
 
-  // Handle button clicks
+  // Toggle settings panel
+  if (toggleSettingsBtn && settingsPanel) {
+    toggleSettingsBtn.addEventListener('click', () => {
+      settingsPanel.classList.toggle('hidden');
+    });
+  }
+
+  // Handle speed button clicks
   speedButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       const newSpeed = parseFloat(btn.getAttribute('data-speed'));
@@ -83,6 +118,82 @@ document.addEventListener('DOMContentLoaded', () => {
   if (resetSpeedBtn) {
     resetSpeedBtn.addEventListener('click', () => {
       applySpeed(1.0);
+    });
+  }
+
+  // Hotkey recording logic
+  hotkeyButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('recording')) return;
+
+      hotkeyButtons.forEach(b => {
+        b.classList.remove('recording');
+      });
+
+      btn.classList.add('recording');
+      btn.textContent = 'Нажмите клавиши...';
+
+      const action = btn.getAttribute('data-action');
+
+      const handleKeydown = (e) => {
+        if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key) || 
+            ['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code)) {
+          return;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        window.removeEventListener('keydown', handleKeydown, true);
+        btn.classList.remove('recording');
+
+        const parts = [];
+        if (e.ctrlKey) parts.push('Ctrl');
+        if (e.shiftKey) parts.push('Shift');
+        if (e.altKey) parts.push('Alt');
+
+        let keyName = e.key;
+        if (e.code.startsWith('Key')) {
+          keyName = e.code.replace('Key', '').toUpperCase();
+        } else if (e.code.startsWith('Digit')) {
+          keyName = e.code.replace('Digit', '');
+        } else if (e.code === 'ArrowUp') keyName = '↑';
+        else if (e.code === 'ArrowDown') keyName = '↓';
+        else if (e.code === 'ArrowLeft') keyName = '←';
+        else if (e.code === 'ArrowRight') keyName = '→';
+        else if (e.code === 'Space') keyName = 'Space';
+        else if (e.key.length === 1) keyName = e.key.toUpperCase();
+        else keyName = e.code;
+
+        parts.push(keyName);
+        const label = parts.join(' + ');
+
+        const newHotkey = {
+          code: e.code,
+          altKey: e.altKey,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          label: label
+        };
+
+        chrome.storage.local.get(['hotkeys'], (result) => {
+          const hotkeys = result.hotkeys || { ...DEFAULT_HOTKEYS };
+          hotkeys[action] = newHotkey;
+          chrome.storage.local.set({ hotkeys }, () => {
+            updateHotkeysUI(hotkeys);
+          });
+        });
+      };
+
+      window.addEventListener('keydown', handleKeydown, true);
+    });
+  });
+
+  if (resetHotkeysBtn) {
+    resetHotkeysBtn.addEventListener('click', () => {
+      chrome.storage.local.set({ hotkeys: DEFAULT_HOTKEYS }, () => {
+        updateHotkeysUI(DEFAULT_HOTKEYS);
+      });
     });
   }
 });

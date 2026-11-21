@@ -9,7 +9,26 @@
   <div class="container">
     <div class="header">
       <span class="title">Скорость видео</span>
-      <span id="speed-badge" class="badge">1.0x</span>
+      <div class="header-right">
+        <span id="speed-badge" class="badge">1.0x</span>
+        <button id="toggle-settings" class="settings-btn" title="Настройки горячих клавиш">⚙</button>
+      </div>
+    </div>
+    <div id="settings-panel" class="settings-panel hidden">
+      <div class="settings-title">Горячие клавиши</div>
+      <div class="hotkey-row">
+        <span class="hotkey-label">Ускорить (+0.1x)</span>
+        <button id="hotkey-speedUp" class="hotkey-btn" data-action="speedUp">Alt + ↑</button>
+      </div>
+      <div class="hotkey-row">
+        <span class="hotkey-label">Замедлить (−0.1x)</span>
+        <button id="hotkey-speedDown" class="hotkey-btn" data-action="speedDown">Alt + ↓</button>
+      </div>
+      <div class="hotkey-row">
+        <span class="hotkey-label">Сброс (1.0x)</span>
+        <button id="hotkey-reset" class="hotkey-btn" data-action="reset">Alt + R</button>
+      </div>
+      <button id="reset-hotkeys" class="reset-hotkeys-btn">Сбросить клавиши</button>
     </div>
     <div class="fine-tuning-panel">
       <button id="step-down" class="fine-btn">−0.1</button>
