@@ -1,22 +1,57 @@
 # Video Speed Controller
 
-<p align="center">
-  <img src="assets/logo.jpg" alt="Video Speed Controller Logo" width="160" height="160" style="border-radius: 16px;">
-</p>
+[![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue.svg)](https://developer.chrome.com/docs/extensions/mv3)
+[![JavaScript](https://img.shields.io/badge/Language-JavaScript-yellow.svg)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A lightweight and powerful Google Chrome extension (Manifest V3) for controlling HTML5 video playback speed across websites.
+Мощное и легкое расширение для Google Chrome (Manifest V3), позволяющее гибко управлять скоростью воспроизведения HTML5-видео на любых сайтах.
 
-## Features
+---
 
-- **Speed Presets**: Quick access to speeds ranging from **0.5x to 2.5x** (0.5x, 0.7x, 1.0x, 1.2x, 1.5x, 1.7x, 2.0x, 2.5x).
-- **Persistent Storage**: Automatically saves your preferred playback speed using `chrome.storage.local`.
-- **Anti-Reset Protection**: Prevents video speeds from resetting when switching videos in playlists or loading new media elements.
-- **Universal Support**: Works on all HTML5 video elements across `<all_urls>`.
+## ✨ Возможности версии v1.2.0
 
-## Local Installation (Developer Mode)
+- 🚀 **Пресеты скорости (0.5x – 2.5x):** Быстрый выбор стандартных значений скорости в интуитивном интерфейсе всплывающего окна.
+- ⚙️ **Точный шаг (±0.1x) и сброс:** Тонкая настройка скорости с помощью настраиваемых горячих клавиш.
+- 🏷️ **Живой бейдж скорости:** Отображение текущего коэффициента скорости прямо на иконке расширения в панели браузера.
+- ⌨️ **Настраиваемые горячие клавиши:** Удобное управление с клавиатуры (ускорение, замедление, сброс к 1.0x).
+- 💎 **Стеклянный OSD-индикатор:** Современное визуальное уведомление в стиле Glassmorphism при изменении скорости поверх видеоплеера.
+- 🛡️ **Защита от сброса на YouTube:** Надежный механизм предотвращения автоматического сброса скорости при смене видео в плейлистах или подгрузке медиапотоков.
 
-1. Clone or download this repository.
-2. Open Google Chrome and navigate to `chrome://extensions/`.
-3. Enable **Developer mode** using the toggle in the top-right corner.
-4. Click **Load unpacked** in the top-left corner.
-5. Select the `video-speed-controller` directory.
+---
+
+## 📁 Структура проекта
+
+```text
+video-speed-controller/
+├── manifest.json          # Конфигурационный файл расширения (Manifest V3)
+├── README.md              # Документация проекта
+├── assets/                # Графические ресурсы
+├── icons/                 # Иконки расширения (16px, 48px, 128px)
+├── popup/                 # Интерфейс попапа (popup.html, popup.css, popup.js)
+├── scripts/               # Логика расширения (content.js, background.js)
+└── tools/                 # Вспомогательные скрипты (generate_icons.py)
+```
+
+---
+
+## 📦 Установка в Google Chrome
+
+1. Скачайте или клонируйте данный репозиторий на ваш компьютер.
+2. Откройте браузер Google Chrome и перейдите на страницу управления расширениями: `chrome://extensions/`.
+3. В правом верхнем углу включите тумблер **«Режим разработчика»** (Developer mode).
+4. Нажмите кнопку **«Загрузить распакованное расширение»** (Load unpacked) в левом верхнем углу.
+5. Выберите корневую папку клонированного репозитория (`video-speed-controller`).
+6. Расширение установлено и готово к работе! Нажмите на его иконку на панели инструментов или используйте горячие клавиши.
+
+---
+
+## 🛠️ Разработка и сборка
+
+Для генерации иконок расширения вы можете использовать утилиту в папке `tools/`:
+```bash
+python tools/generate_icons.py
+```
+
+## 📄 Лицензия
+
+Распространяется под условиями [MIT License](LICENSE).
