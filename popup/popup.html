@@ -11,6 +11,12 @@
       <span class="title">Скорость видео</span>
       <div class="header-right">
         <span id="speed-badge" class="badge">1.0x</span>
+        <button id="toggle-pip" class="pip-btn" title="Картинка в картинке (Alt + P)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="3" ry="3"></rect>
+            <rect x="12" y="10" width="8" height="8" rx="1.5" ry="1.5" fill="currentColor" fill-opacity="0.3"></rect>
+          </svg>
+        </button>
         <button id="toggle-settings" class="settings-btn" title="Настройки горячих клавиш">⚙</button>
       </div>
     </div>
@@ -27,6 +33,10 @@
       <div class="hotkey-row">
         <span class="hotkey-label">Сброс (1.0x)</span>
         <button id="hotkey-reset" class="hotkey-btn" data-action="reset">Alt + R</button>
+      </div>
+      <div class="hotkey-row">
+        <span class="hotkey-label">Картинка в картинке</span>
+        <button id="hotkey-pip" class="hotkey-btn" data-action="pip">Alt + P</button>
       </div>
       <button id="reset-hotkeys" class="reset-hotkeys-btn">Сбросить клавиши</button>
     </div>

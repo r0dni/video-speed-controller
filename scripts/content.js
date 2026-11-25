@@ -2,7 +2,8 @@ let currentSpeed = 1.0;
 let currentHotkeys = {
   speedUp: { code: 'ArrowUp', altKey: true, ctrlKey: false, shiftKey: false },
   speedDown: { code: 'ArrowDown', altKey: true, ctrlKey: false, shiftKey: false },
-  reset: { code: 'KeyR', altKey: true, ctrlKey: false, shiftKey: false }
+  reset: { code: 'KeyR', altKey: true, ctrlKey: false, shiftKey: false },
+  pip: { code: 'KeyP', altKey: true, ctrlKey: false, shiftKey: false }
 };
 let osdElement = null;
 let osdTimeout = null;
@@ -22,10 +23,7 @@ function applySpeed(speed) {
 }
 
 // Show glass OSD indicator
-function showSpeedOSD(speed) {
-  const rounded = Math.round(speed * 10) / 10;
-  const text = rounded.toFixed(1) + 'x';
-
+function showOSD(text) {
   if (!osdElement) {
     osdElement = document.createElement('div');
     osdElement.id = 'vsc-osd-badge';
@@ -66,6 +64,11 @@ function showSpeedOSD(speed) {
   }, 1200);
 }
 
+function showSpeedOSD(speed) {
+  const rounded = Math.round(speed * 10) / 10;
+  showOSD(rounded.toFixed(1) + 'x');
+}
+
 // Load initial speed and hotkeys from storage
 chrome.storage.local.get(['playbackSpeed', 'hotkeys'], (result) => {
   if (result.playbackSpeed !== undefined) {
@@ -94,6 +97,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'SET_SPEED') {
     applySpeed(request.speed);
     sendResponse({ status: 'success' });
+  } else if (request.action === 'TOGGLE_PIP') {
+    Promise.resolve(togglePiP()).then(res => {
+      sendResponse(res || { status: 'ok' });
+    });
+    return true; // Keep channel open for async response
   }
 });
 
@@ -123,6 +131,74 @@ document.addEventListener('ratechange', (event) => {
   }
 }, true);
 
+// Find best target video element
+function findBestVideo() {
+  const videos = Array.from(document.querySelectorAll('video')).filter(v => {
+    if (v.disablePictureInPicture) return false;
+    const rect = v.getBoundingClientRect();
+    const style = window.getComputedStyle(v);
+    const isVisible = style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0;
+    return isVisible && rect.width > 0 && rect.height > 0;
+  });
+
+  if (videos.length === 0) return null;
+
+  // 1. Currently playing with valid readyState
+  let target = videos.find(v => !v.paused && !v.ended && v.readyState > 2);
+  if (target) return target;
+
+  // 2. Any playing video
+  target = videos.find(v => !v.paused && !v.ended);
+  if (target) return target;
+
+  // 3. Largest visible video
+  return videos.sort((a, b) => {
+    const aRect = a.getBoundingClientRect();
+    const bRect = b.getBoundingClientRect();
+    return (bRect.width * bRect.height) - (aRect.width * aRect.height);
+  })[0];
+}
+
+function togglePiP() {
+  try {
+    if (document.pictureInPictureElement) {
+      return document.exitPictureInPicture()
+        .then(() => {
+          showOSD('PiP Off');
+          return { status: 'exited' };
+        })
+        .catch(err => {
+          console.debug('Failed to exit PiP:', err);
+          return { status: 'error', message: err.message };
+        });
+    }
+
+    const targetVideo = findBestVideo();
+    if (!targetVideo) {
+      showOSD('No Video');
+      return Promise.resolve({ status: 'no_video' });
+    }
+
+    if (targetVideo.readyState === 0) {
+      showOSD('Video Loading...');
+      return Promise.resolve({ status: 'not_ready' });
+    }
+
+    return targetVideo.requestPictureInPicture()
+      .then(() => {
+        showOSD('PiP On');
+        return { status: 'entered' };
+      })
+      .catch(err => {
+        console.debug('Failed to request PiP:', err);
+        return { status: 'error', message: err.message };
+      });
+  } catch (err) {
+    console.debug('togglePiP error:', err);
+    return Promise.resolve({ status: 'error', message: err.message });
+  }
+}
+
 // Global hotkey listener
 document.addEventListener('keydown', (e) => {
   const activeEl = document.activeElement;
@@ -140,6 +216,13 @@ document.addEventListener('keydown', (e) => {
            !!e.ctrlKey === !!hk.ctrlKey &&
            !!e.shiftKey === !!hk.shiftKey;
   };
+
+  if (matchHotkey(currentHotkeys.pip)) {
+    e.preventDefault();
+    e.stopPropagation();
+    togglePiP();
+    return;
+  }
 
   let newSpeed = null;
   if (matchHotkey(currentHotkeys.speedUp)) {
@@ -164,4 +247,4 @@ document.addEventListener('keydown', (e) => {
   }
 }, true);
 
-console.log("Video Speed Controller content script (v1.2.0) loaded and active");
+console.log("Video Speed Controller content script (v1.3.0) loaded and active");

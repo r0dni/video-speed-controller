@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const resetSpeedBtn = document.getElementById('reset-speed');
 
   const toggleSettingsBtn = document.getElementById('toggle-settings');
+  const togglePipBtn = document.getElementById('toggle-pip');
   const settingsPanel = document.getElementById('settings-panel');
   const resetHotkeysBtn = document.getElementById('reset-hotkeys');
   const hotkeyButtons = document.querySelectorAll('.hotkey-btn');
@@ -14,7 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const DEFAULT_HOTKEYS = {
     speedUp: { code: 'ArrowUp', altKey: true, ctrlKey: false, shiftKey: false, label: 'Alt + ↑' },
     speedDown: { code: 'ArrowDown', altKey: true, ctrlKey: false, shiftKey: false, label: 'Alt + ↓' },
-    reset: { code: 'KeyR', altKey: true, ctrlKey: false, shiftKey: false, label: 'Alt + R' }
+    reset: { code: 'KeyR', altKey: true, ctrlKey: false, shiftKey: false, label: 'Alt + R' },
+    pip: { code: 'KeyP', altKey: true, ctrlKey: false, shiftKey: false, label: 'Alt + P' }
   };
 
   // Display extension version
@@ -89,6 +91,58 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Handle PiP button click
+  if (togglePipBtn) {
+    togglePipBtn.addEventListener('click', () => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs[0]?.id) return;
+        const tab = tabs[0];
+
+        // Guard against restricted chrome:// or edge:// pages
+        if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('devtools://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:'))) {
+          console.warn('PiP cannot be injected on restricted pages:', tab.url);
+          return;
+        }
+
+        // Send message to content script first
+        chrome.tabs.sendMessage(tab.id, { action: 'TOGGLE_PIP' }, (response) => {
+          if (chrome.runtime.lastError) {
+            // Content script might not be injected or ready, fallback to executeScript
+            chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              func: () => {
+                try {
+                  if (document.pictureInPictureElement) {
+                    return document.exitPictureInPicture().catch(() => {});
+                  }
+                  const videos = Array.from(document.querySelectorAll('video')).filter(v => {
+                    if (v.disablePictureInPicture) return false;
+                    const r = v.getBoundingClientRect();
+                    const s = window.getComputedStyle(v);
+                    return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+                  });
+                  if (videos.length === 0) return;
+                  let target = videos.find(v => !v.paused && !v.ended && v.readyState > 2) ||
+                               videos.find(v => !v.paused && !v.ended) ||
+                               videos.sort((a, b) => {
+                                 const aR = a.getBoundingClientRect();
+                                 const bR = b.getBoundingClientRect();
+                                 return (bR.width * bR.height) - (aR.width * aR.height);
+                               })[0];
+                  if (target && target.readyState > 0) {
+                    target.requestPictureInPicture().catch(e => console.debug('PiP error:', e));
+                  }
+                } catch (e) {
+                  console.debug('PiP error:', e);
+                }
+              }
+            }).catch(err => console.debug('executeScript fallback error:', err));
+          }
+        });
+      });
+    });
+  }
+
   // Handle speed button clicks
   speedButtons.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -122,13 +176,31 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Hotkey recording logic
+  let activeKeydownListener = null;
+
+  function stopRecording() {
+    if (activeKeydownListener) {
+      window.removeEventListener('keydown', activeKeydownListener, true);
+      activeKeydownListener = null;
+    }
+    hotkeyButtons.forEach(b => b.classList.remove('recording'));
+  }
+
+  // Cancel recording on click outside buttons
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.hotkey-btn')) {
+      stopRecording();
+      chrome.storage.local.get(['hotkeys'], (result) => {
+        updateHotkeysUI(result.hotkeys || DEFAULT_HOTKEYS);
+      });
+    }
+  });
+
   hotkeyButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.classList.contains('recording')) return;
 
-      hotkeyButtons.forEach(b => {
-        b.classList.remove('recording');
-      });
+      stopRecording();
 
       btn.classList.add('recording');
       btn.textContent = 'Нажмите клавиши...';
@@ -136,6 +208,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const action = btn.getAttribute('data-action');
 
       const handleKeydown = (e) => {
+        // Allow Escape to cancel recording
+        if (e.key === 'Escape' || e.code === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          stopRecording();
+          chrome.storage.local.get(['hotkeys'], (result) => {
+            updateHotkeysUI(result.hotkeys || DEFAULT_HOTKEYS);
+          });
+          return;
+        }
+
         if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key) || 
             ['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code)) {
           return;
@@ -144,8 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         e.stopPropagation();
 
-        window.removeEventListener('keydown', handleKeydown, true);
-        btn.classList.remove('recording');
+        stopRecording();
 
         const parts = [];
         if (e.ctrlKey) parts.push('Ctrl');
@@ -178,6 +260,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chrome.storage.local.get(['hotkeys'], (result) => {
           const hotkeys = result.hotkeys || { ...DEFAULT_HOTKEYS };
+
+          // Prevent conflict / duplicates: clear conflicting actions
+          for (const [existingAction, existingHk] of Object.entries(hotkeys)) {
+            if (existingAction !== action && existingHk) {
+              if (existingHk.code === newHotkey.code &&
+                  !!existingHk.altKey === !!newHotkey.altKey &&
+                  !!existingHk.ctrlKey === !!newHotkey.ctrlKey &&
+                  !!existingHk.shiftKey === !!newHotkey.shiftKey) {
+                // Clear conflict
+                hotkeys[existingAction] = { code: '', altKey: false, ctrlKey: false, shiftKey: false, label: '—' };
+              }
+            }
+          }
+
           hotkeys[action] = newHotkey;
           chrome.storage.local.set({ hotkeys }, () => {
             updateHotkeysUI(hotkeys);
@@ -185,6 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       };
 
+      activeKeydownListener = handleKeydown;
       window.addEventListener('keydown', handleKeydown, true);
     });
   });
