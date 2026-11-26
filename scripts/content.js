@@ -143,16 +143,19 @@ function findBestVideo() {
 
   if (videos.length === 0) return null;
 
-  // 1. Currently playing with valid readyState
-  let target = videos.find(v => !v.paused && !v.ended && v.readyState > 2);
+  // 1. Currently playing with valid readyState (HAVE_METADATA = 1 or higher, prefer >= 2)
+  let target = videos.find(v => !v.paused && !v.ended && v.readyState >= 2);
   if (target) return target;
 
-  // 2. Any playing video
-  target = videos.find(v => !v.paused && !v.ended);
+  // 2. Any playing video with loaded metadata
+  target = videos.find(v => !v.paused && !v.ended && v.readyState >= 1);
   if (target) return target;
 
-  // 3. Largest visible video
-  return videos.sort((a, b) => {
+  // 3. Paused videos with metadata ready, prefer largest visible
+  const readyVideos = videos.filter(v => v.readyState >= 1);
+  const candidates = readyVideos.length > 0 ? readyVideos : videos;
+
+  return candidates.sort((a, b) => {
     const aRect = a.getBoundingClientRect();
     const bRect = b.getBoundingClientRect();
     return (bRect.width * bRect.height) - (aRect.width * aRect.height);
@@ -161,6 +164,11 @@ function findBestVideo() {
 
 function togglePiP() {
   try {
+    if (!document.pictureInPictureEnabled) {
+      showOSD('PiP Not Supported');
+      return Promise.resolve({ status: 'not_supported' });
+    }
+
     if (document.pictureInPictureElement) {
       return document.exitPictureInPicture()
         .then(() => {
@@ -169,7 +177,8 @@ function togglePiP() {
         })
         .catch(err => {
           console.debug('Failed to exit PiP:', err);
-          return { status: 'error', message: err.message };
+          showOSD('PiP Error');
+          return { status: 'error', message: err.name || err.message };
         });
     }
 
@@ -191,16 +200,26 @@ function togglePiP() {
       })
       .catch(err => {
         console.debug('Failed to request PiP:', err);
-        return { status: 'error', message: err.message };
+        if (err.name === 'NotAllowedError') {
+          showOSD('PiP: Click Page First');
+        } else if (err.name === 'InvalidStateError') {
+          showOSD('Video Loading...');
+        } else {
+          showOSD('PiP Unavailable');
+        }
+        return { status: 'error', name: err.name, message: err.message };
       });
   } catch (err) {
     console.debug('togglePiP error:', err);
+    showOSD('PiP Error');
     return Promise.resolve({ status: 'error', message: err.message });
   }
 }
 
 // Global hotkey listener
 document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented) return;
+
   const activeEl = document.activeElement;
   if (activeEl) {
     const tagName = activeEl.tagName;
@@ -210,7 +229,7 @@ document.addEventListener('keydown', (e) => {
   }
 
   const matchHotkey = (hk) => {
-    if (!hk) return false;
+    if (!hk || !hk.code) return false;
     return e.code === hk.code &&
            !!e.altKey === !!hk.altKey &&
            !!e.ctrlKey === !!hk.ctrlKey &&

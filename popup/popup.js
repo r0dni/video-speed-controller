@@ -99,7 +99,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const tab = tabs[0];
 
         // Guard against restricted chrome:// or edge:// pages
-        if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('devtools://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:'))) {
+        const isRestricted = !tab.url ||
+          tab.url.startsWith('chrome://') ||
+          tab.url.startsWith('chrome-extension://') ||
+          tab.url.startsWith('devtools://') ||
+          tab.url.startsWith('edge://') ||
+          tab.url.startsWith('about:') ||
+          tab.url.startsWith('view-source:');
+
+        if (isRestricted) {
           console.warn('PiP cannot be injected on restricted pages:', tab.url);
           return;
         }
@@ -112,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
               target: { tabId: tab.id },
               func: () => {
                 try {
+                  if (!document.pictureInPictureEnabled) return;
                   if (document.pictureInPictureElement) {
                     return document.exitPictureInPicture().catch(() => {});
                   }
@@ -122,8 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0;
                   });
                   if (videos.length === 0) return;
-                  let target = videos.find(v => !v.paused && !v.ended && v.readyState > 2) ||
-                               videos.find(v => !v.paused && !v.ended) ||
+                  let target = videos.find(v => !v.paused && !v.ended && v.readyState >= 2) ||
+                               videos.find(v => !v.paused && !v.ended && v.readyState >= 1) ||
                                videos.sort((a, b) => {
                                  const aR = a.getBoundingClientRect();
                                  const bR = b.getBoundingClientRect();
@@ -197,7 +206,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   hotkeyButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (event) => {
+      event.stopPropagation();
       if (btn.classList.contains('recording')) return;
 
       stopRecording();
@@ -288,6 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (resetHotkeysBtn) {
     resetHotkeysBtn.addEventListener('click', () => {
+      stopRecording();
       chrome.storage.local.set({ hotkeys: DEFAULT_HOTKEYS }, () => {
         updateHotkeysUI(DEFAULT_HOTKEYS);
       });
