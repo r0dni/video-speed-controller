@@ -75,6 +75,53 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Helper to check if tab is restricted
+  function isRestrictedTab(tab) {
+    return !tab?.url ||
+      tab.url.startsWith('chrome://') ||
+      tab.url.startsWith('chrome-extension://') ||
+      tab.url.startsWith('devtools://') ||
+      tab.url.startsWith('edge://') ||
+      tab.url.startsWith('about:') ||
+      tab.url.startsWith('view-source:');
+  }
+
+  // Update PiP button active state by querying active tab
+  function checkPipState() {
+    if (!togglePipBtn) return;
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.id || isRestrictedTab(tab)) {
+        togglePipBtn.classList.remove('active');
+        return;
+      }
+
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          try {
+            return Boolean(document.pictureInPictureElement);
+          } catch (e) {
+            return false;
+          }
+        }
+      }).then((results) => {
+        const isPip = Boolean(results?.[0]?.result);
+        if (isPip) {
+          togglePipBtn.classList.add('active');
+        } else {
+          togglePipBtn.classList.remove('active');
+        }
+      }).catch((err) => {
+        console.debug('Failed to check PiP state:', err);
+        togglePipBtn.classList.remove('active');
+      });
+    });
+  }
+
+  // Check PiP state on popup open
+  checkPipState();
+
   // Load initial speed and hotkeys from storage
   chrome.storage.local.get(['playbackSpeed', 'hotkeys'], (result) => {
     const currentSpeed = result.playbackSpeed !== undefined ? result.playbackSpeed : 1;
@@ -98,17 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tabs[0]?.id) return;
         const tab = tabs[0];
 
-        // Guard against restricted chrome:// or edge:// pages
-        const isRestricted = !tab.url ||
-          tab.url.startsWith('chrome://') ||
-          tab.url.startsWith('chrome-extension://') ||
-          tab.url.startsWith('devtools://') ||
-          tab.url.startsWith('edge://') ||
-          tab.url.startsWith('about:') ||
-          tab.url.startsWith('view-source:');
-
-        if (isRestricted) {
+        if (isRestrictedTab(tab)) {
           console.warn('PiP cannot be injected on restricted pages:', tab.url);
+          togglePipBtn.classList.remove('active');
           return;
         }
 
@@ -120,9 +159,11 @@ document.addEventListener('DOMContentLoaded', () => {
               target: { tabId: tab.id },
               func: () => {
                 try {
-                  if (!document.pictureInPictureEnabled) return;
+                  if (!document.pictureInPictureEnabled) return false;
                   if (document.pictureInPictureElement) {
-                    return document.exitPictureInPicture().catch(() => {});
+                    return document.exitPictureInPicture()
+                      .then(() => false)
+                      .catch(() => Boolean(document.pictureInPictureElement));
                   }
                   const videos = Array.from(document.querySelectorAll('video')).filter(v => {
                     if (v.disablePictureInPicture) return false;
@@ -130,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const s = window.getComputedStyle(v);
                     return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0;
                   });
-                  if (videos.length === 0) return;
+                  if (videos.length === 0) return false;
                   let target = videos.find(v => !v.paused && !v.ended && v.readyState >= 2) ||
                                videos.find(v => !v.paused && !v.ended && v.readyState >= 1) ||
                                videos.sort((a, b) => {
@@ -139,13 +180,35 @@ document.addEventListener('DOMContentLoaded', () => {
                                  return (bR.width * bR.height) - (aR.width * aR.height);
                                })[0];
                   if (target && target.readyState > 0) {
-                    target.requestPictureInPicture().catch(e => console.debug('PiP error:', e));
+                    return target.requestPictureInPicture()
+                      .then(() => true)
+                      .catch(e => {
+                        console.debug('PiP error:', e);
+                        return false;
+                      });
                   }
+                  return false;
                 } catch (e) {
                   console.debug('PiP error:', e);
+                  return false;
                 }
               }
-            }).catch(err => console.debug('executeScript fallback error:', err));
+            }).then((results) => {
+              const inPip = Boolean(results?.[0]?.result);
+              togglePipBtn.classList.toggle('active', inPip);
+            }).catch(err => {
+              console.debug('executeScript fallback error:', err);
+              checkPipState();
+            });
+          } else {
+            if (response && response.status === 'entered') {
+              togglePipBtn.classList.add('active');
+            } else if (response && (response.status === 'exited' || response.status === 'no_video' || response.status === 'not_ready' || response.status === 'error')) {
+              togglePipBtn.classList.remove('active');
+            } else {
+              // Re-check actual state after short delay
+              setTimeout(checkPipState, 150);
+            }
           }
         });
       });
